@@ -17,7 +17,7 @@ flowchart LR
     direction TB
         RA1["Remote Audio 1<br>**Role: Main**"]
         RA2["Remote Audio 2<br>**Role: Main**"]
-        RA3["RemoteAudio 3<br>**Role: Main**"]
+        RA3["Remote Audio 3<br>**Role: Main**"]
         RA4["Remote Audio 4<br>**Role: Presentation**"]
         RA5["Remote Audio 5<br>**Role: Simultaneous Interpreter**"]
   end
