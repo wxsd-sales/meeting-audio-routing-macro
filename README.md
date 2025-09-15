@@ -118,71 +118,126 @@ flowchart LR
 
 ## Overview
 
-Go into detail about the implementation.   3-4 Sentences
-**HOW** the implementation works. You need not give end-to-end details but an overview.
+This macro lets and admin preconfigured how audio from a Webex Meeting is outputted in a room. When attending a Webex Meeting with Multi-Stream enabled a Cisco Collab Device will receive an audio stream for the Far-End Main Speakers, Presentation and any Simultaneous Interpreter.
 
+This detects when these audio streams appear and apply the audio routing configuration upon detection.
 
+### Far-End Participant and Presentation Content Audio Routing
 
-### Flow Diagram
+For example, if you wanted the Far-End Presentation audio to play out a separate speaker group ( group name: "Content Share") than the far end Participant audio ( group name: "Loudspeaker" ), then you can configure would look like this:
 
-<!-- *MANDATORY*  Insert Your Flow Diagram Here (if small PoC, alternative option is to include break down how it works here instead of diagram) -->
-![image/gif](insert img link here)
+```javascript
+  {
+    role: "Main",
+    outputs: [{
+      name: "Loudspeaker",
+      gain: 0
+    }]
+  },
+  {
+    role: "Presentation",
+    outputs: [{
+      name: "Content Share",
+      gain: 0
+    },
+    {
+      name: "Loudspeaker",
+      gain: -30
+    }]
+  },
+```
 
+### Simultaneous Interpreter Language Audio Routing
+
+If you wanted to route specific Simultaneous Interpreter languages out specific output groups ( group names: "Language 1" - "Language 4") you can configure this with the following configuration:
+
+```javascript
+{
+    role: "SimultaneousInterpreter",
+    languageName: 'es',
+    mixerLevel: 50,
+    output: "Language 1"
+
+  },
+  {
+    role: "SimultaneousInterpreter",
+    languageName: 'de',
+    mixerLevel: 100,
+    output: "Language 2"
+  },
+  {
+    role: "SimultaneousInterpreter",
+    languageName: 'fr',
+    mixerLevel: 50,
+    output: "Language 3"
+  },
+  {
+    role: "SimultaneousInterpreter",
+    languageName: 'en',
+    mixerLevel: 50,
+    output: "Language 4"
+  }
+```
 
 
 ## Setup
 
 ### Prerequisites & Dependencies: 
 
-- RoomOS 11.31.x or above Webex Device.
+- Cisco Room Kit Pro running RoomOS 11.33.x
+- Separate Audio Outputs (Speakers/Headsets)
 - Web admin access to the device to upload the macro.
 
 
+### Preconfiguration Steps:
+
+1. Enable the Audio Console on your Codec
+2. Create output groups with unique names
+3. Ensure the correct audio outputs are added to the correct output group
+4. Note the output group names for the macro configuration
+
+
 ### Installation Steps:
-1. Download the ``meeting-audio-routing.js`` file and upload it to your Webex Room devices Macro editor via the web interface.
+
+1. Download the ``meeting-audio.js`` file and upload it to your Webex Room devices Macro editor via the web interface.
 2. Configure the Macro by changing the initial values, there are comments explaining each one.
       ```javascript
-      const remoteAudioMap = {
-        "Presentation": {
-          "Loudspeaker": -30,
-          "Content Share": 0,
-          "Interpreter1": -30
+      const audioConfig = [
+        {
+          role: "Main" | "Presentation",
+          outputs: [{
+            name: "Content Share",
+            gain: 0
+          },
+          {
+            name: "Loudspeaker",
+            gain: -30
+          }]
         },
-        "SimultaneousInterpreter": {
-          "Loudspeaker": -30,
-          "Content Share": -30,
-          "Interpreter1": 0
+        {
+          role: "SimultaneousInterpreter",
+          languageName: 'es',
+          mixerLevel: 50,
+          output: "Language 1"
         }
-      }
+      ]
       ```
 3. Enable the Macro on the editor.
     
     
-    
 ## Demo
 
-<!-- Insert link to the website below (if deployed). -->
-Check out our live demo, available [here](<insert link>)!
-
-<!-- Keep the following statement -->
 *For more demos & PoCs like this, check out our [Webex Labs site](https://collabtoolbox.cisco.com/webex-labs).
 
 
-<!-- Update your vidcast title, video screenshot, vidcast/youtube link & name -->
-[![Your Video Title ](assets/peer_support_main.PNG)](https://www.youtube.com/watch?v=SqZhiC8jHhU&t=10s, "<insert demo name here>")
-
-
-
 ## License
-<!-- MAKE SURE an MIT license is included in your Repository. If another license is needed, verify with management. This is for legal reasons.--> 
 
-<!-- Keep the following statement -->
 All contents are licensed under the MIT license. Please see [license](LICENSE) for details.
 
 
 ## Disclaimer
-<!-- Keep the following here -->  
- Everything included is for demo and Proof of Concept purposes only. Use of the site is solely at your own risk. This site may contain links to third party content, which we do not warrant, endorse, or assume liability for. These demos are for Cisco Webex usecases, but are not Official Cisco Webex Branded demos.
+
+Everything included is for demo and Proof of Concept purposes only. Use of the site is solely at your own risk. This site may contain links to third party content, which we do not warrant, endorse, or assume liability for. These demos are for Cisco Webex use cases, but are not Official Cisco Webex Branded demos.
 
 
 ## Questions
