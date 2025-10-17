@@ -151,9 +151,6 @@ async function init(mode) {
   if (!CallId) {
     deleteTempLoudspeaker();
 
-    
-    xapi.Command.Webex.Join(
-      { Number: '20008760111', ParticipantRole: 'Guest', Pin: '1234' });
     return
   }
 
