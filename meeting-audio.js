@@ -6,8 +6,8 @@
  *                    	Cisco Systems
  * 
  * 
- * Version: 2-0-0
- * Released: 10/17/25
+ * Version: 3-0-0
+ * Released: 11/11/25
  * 
  * This is an example macro which routes incoming Remote Audio
  * Inputs from a Webex Meeting out specific Audio outputs when
@@ -25,13 +25,12 @@
  * 
  ********************************************************/
 
-
-
 import xapi from 'xapi';
 
 /*********************************************************
  * Configure the settings below
 **********************************************************/
+
 
 const audioConfig = [
   {
@@ -45,7 +44,7 @@ const audioConfig = [
   {
     role: "Presentation",
     outputs: [{
-      name: "Loudspeaker",
+      name: "Front Speakers",
       gain: 0
     }],
     aec: true
@@ -54,20 +53,26 @@ const audioConfig = [
     role: "SimultaneousInterpreter",
     languageName: 'no',
     mixerLevel: 100,
-    output: "Language: Norwegian",
+    output: "Language 1",
     aec: true
   },
   {
     role: "SimultaneousInterpreter",
     languageName: 'auto',
     mixerLevel: 100,
-    output: "Language: Auto 1"
+    output: "Language 2"
   },
   {
     role: "SimultaneousInterpreter",
     languageName: 'auto',
     mixerLevel: 100,
-    output: "Language: Auto 2"
+    output: "Language 3"
+  },
+  {
+    role: "SimultaneousInterpreter",
+    languageName: 'auto',
+    mixerLevel: 100,
+    output: "Language 4"
   }
 ]
 
@@ -77,13 +82,15 @@ const audioConfig = [
  * Do not change below
 **********************************************************/
 
+const debug = false;
+const listeners = [];
+const aecRefPrefix = 'AEC-Ref';
 
+let selectedLanguages = [];
 let remoteInputTimer;
 let participantChangeTimer;
 let callId;
-let selectedLanguages = [];
-const listeners = [];
-const aecRefPrefix = 'AEC-Ref'
+
 
 xapi.Config.Audio.Output.ConnectorSetup.on(init);
 xapi.Config.Audio.Output.ConnectorSetup.get()
@@ -107,8 +114,9 @@ async function init(mode) {
   }
 
   // Monitor for new Remote Inputs and update audio routing
-  listeners.push(xapi.Status.Audio.Input.RemoteInput.on(async ({ CallId, Role, id }) => {
-    console.log('Audio Remote Input:', CallId, Role, id)
+  listeners.push(xapi.Status.Audio.Input.RemoteInput.on(async ({ CallId, Role, id, ghost }) => {
+    if (ghost) return
+    console.log('Audio Remote Input:', CallId, Role, id, ghost)
     if (!CallId && !Role) return
 
     // Simple debounce to trigger gain update as new inputs are added
@@ -143,34 +151,32 @@ async function init(mode) {
   listeners.push(xapi.Status.Conference.Call.SimultaneousInterpretation.MixerLevel.on(processParticipants));
 
   const conference = await xapi.Status.Conference.Call.get();
-  console.log('Conference:', conference?.[0]?.SimultaneousInterpretation?.MixerLevel)
-  fixMixerLevels(conference?.[0]?.SimultaneousInterpretation?.MixerLevel);
+  const mixLevel = conference?.[0]?.SimultaneousInterpretation?.MixerLevel;
+  fixMixerLevels(mixLevel);
 
 
   const CallId = call?.[0]?.id;
   if (!CallId) {
     deleteTempLoudspeaker();
-
     return
   }
 
   setTimeout(applyAudioRouting, 2000);
 
-
-
-
 }
 
-//xapi.Event.Conference.ParticipantList.on(event => console.debug(event))
-//processParticipants()
 
 async function processParticipants({ ParticipantUpdated, ParticipantAdded, ParticipantDeleted, NewList } = {}) {
 
-  //if(!ParticipantUpdated || !ParticipantAdded || !ParticipantDeleted || !NewList )
-
   const event = ParticipantDeleted ?? (ParticipantUpdated ?? (ParticipantAdded ?? NewList));
-  const eventType = ParticipantAdded ? 'PacticipantAdded' :
-    (ParticipantDeleted ? 'ParcitipandDeleted' : (ParticipantUpdated ? 'ParticipantUpdated' : 'NewList'));
+
+  const eventType = ParticipantAdded ?
+    'PacticipantAdded' :
+    (ParticipantDeleted ?
+      'ParcitipandDeleted' :
+      (ParticipantUpdated ?
+        'ParticipantUpdated' : 'NewList'));
+
   const CallId = event?.CallId ?? await xapi.Status.Call.get().then(call => call?.[0]?.id);
   if (!CallId) return
 
@@ -210,6 +216,7 @@ async function processAvailableLanguages(CallId) {
 
   // Query All Participants
   const result = await xapi.Command.Conference.ParticipantList.Search({ CallId });
+
   const participants = result?.Participant;
 
   if (!participants) {
@@ -252,8 +259,19 @@ async function processAvailableLanguages(CallId) {
   selectedLanguages = staticLanguageStreams.concat(autoLanguages);
   console.log('Selected Languages:', JSON.stringify(selectedLanguages));
 
-  const mixerLevel = await xapi.Status.Conference.Call.SimultaneousInterpretation.MixerLevel.get();
-  console.log('mixerLevel', JSON.stringify(mixerLevel))
+  const conferenceCall = await xapi.Status.Conference.Call.get();
+
+  console.log(JSON.stringify(conferenceCall))
+
+  const mixerLevel = conferenceCall?.[0]?.SimultaneousInterpretation?.MixerLevel;
+
+  if (!mixerLevel) {
+
+    return
+  }
+
+
+  console.log('Current Mixer Level:', mixerLevel)
   if (mixerLevel == 50) return
   console.log('Setting Mixer Level to 50 for CallId:', CallId)
   xapi.Command.Conference.SimultaneousInterpretation.SetMixer({ CallId, Level: 50 });
@@ -303,7 +321,7 @@ async function createTempLoudspeaker() {
   console.log('Creating AEC Reference Loudspeaker Output Group')
   const localOutputs = await xapi.Status.Audio.Output.LocalOutput.get();
 
-  console.log('localoutputs:', localOutputs)
+  console.debug('localoutputs:', localOutputs)
 
   // Check for existing backup
   const loudspeakerBackup = localOutputs.find(({ Name }) => Name.startsWith(aecRefPrefix));
@@ -315,7 +333,7 @@ async function createTempLoudspeaker() {
 
   // Get Loudspeaker Output and identify SI Rules using it
   const loudspeakerOutput = localOutputs.find(({ Loudspeaker }) => Loudspeaker == 'On');
-  const loudspeakerConnectors = loudspeakerOutput?.Connector;
+  const loudspeakerConnectors = loudspeakerOutput?.Connector ?? [];
   const loudspeakerInputs = loudspeakerOutput?.Input;
   const loudspeakerId = loudspeakerOutput?.id;
   const loudspeakerName = loudspeakerOutput?.Name;
@@ -344,7 +362,7 @@ async function createTempLoudspeaker() {
   // Move all but the Ethernet.1 and Line.6 Output connectors to Temp Loudspeaker Output Group.
   if (tempLoudspeakerId) {
     console.log('Moving Output Connectors from output group:', loudspeakerId, ' to group:', tempLoudspeakerId)
-    for(let i=0; i<loudspeakerConnectors.length; i++ ){
+    for (let i = 0; i < loudspeakerConnectors.length; i++) {
       const connector = loudspeakerConnectors[i];
       if (connector != 'Ethernet.1' && connector != 'Line.6') {
         console.log('Moving Connector:', connector)
@@ -354,8 +372,8 @@ async function createTempLoudspeaker() {
       }
     }
 
-    for(let i=0; i< loudspeakerInputs.length; i++){
-      const {id, Gain} = loudspeakerInputs[i];
+    for (let i = 0; i < loudspeakerInputs.length; i++) {
+      const { id, Gain } = loudspeakerInputs[i];
       xapi.Command.Audio.LocalOutput.ConnectInput({ InputGain: Gain, InputId: id, OutputId: tempLoudspeakerId });
     }
 
@@ -385,9 +403,10 @@ async function deleteTempLoudspeaker() {
 
   // Move all connectors from temp group back to loudspeaker group
   console.log('Found Temp Loudspeaker:', tempLoudspeaker)
-  const connectors = tempLoudspeaker?.Connector;
+  const connectors = tempLoudspeaker?.Connector ?? [];
 
-  console.log('Moving Output Connectors from output group:',  tempLoudspeaker.id , ' to group:', loudspeakerBackup.id)
+
+  console.log('Moving Output Connectors from output group:', tempLoudspeaker.id, ' to group:', loudspeakerBackup.id)
   for (let i = 0; i < connectors.length; i++) {
     const connector = connectors[i]
     console.log('Moving Connector:', connector)
@@ -402,8 +421,6 @@ async function deleteTempLoudspeaker() {
   console.log('Temp Loudspeaker Output Group Deleted');
 }
 
-//setTimeout(deleteTempLoudspeaker, 10*1000)
-
 
 // Updates the Input Gain for the last Remote Input to the Loudspeaker Output Group
 async function applyAudioRouting() {
@@ -412,144 +429,234 @@ async function applyAudioRouting() {
 
   // Disconnect All Interpreters Before Applying Audio Changes 
   await disconnectStreams();
-
   await createTempLoudspeaker();
 
   const remoteInputs = await xapi.Status.Audio.Input.RemoteInput.get();
   const localOutputs = await xapi.Status.Audio.Output.LocalOutput.get();
 
+  console.debug('remoteInputs:', remoteInputs);
   console.debug('localOutputs:', localOutputs);
 
   console.log('Applying Non-SI Rules');
-  //Apply Non-SI Rules
-  for (let i = 0; i < localOutputs.length; i++) {
-    for (let j = 0; j < remoteInputs.length; j++) {
-      await identifyAndApplyRule(remoteInputs[j], localOutputs[i], localOutputs, ['Main', 'Presentation'])
+
+  const updates = processAudioConnections(remoteInputs, localOutputs, audioConfig);
+  // console.debug(JSON.stringify(updates, null, 2));
+
+  for (const [key, values] of Object.entries(updates)) {
+    for (let i = 0; i < values.length; i++) {
+      const xCommand = `xapi.Command.Audio.LocalOutput.${key}(${JSON.stringify(values[i])})`;
+      try {
+        console.debug('Calling xAPI [', xCommand, ']');
+        await xapi.Command.Audio.LocalOutput[key](values[i]);
+      } catch (error) {
+        console.debug('Error Calling xAPI [', xCommand, '] - Message:', error.message);
+      }
     }
   }
-
-  console.log('Applying SI Rules');
-  //Apply SI Rules
-  for (let i = 0; i < localOutputs.length; i++) {
-    for (let j = 0; j < remoteInputs.length; j++) {
-      await identifyAndApplyRule(remoteInputs[j], localOutputs[i], localOutputs, ['SimultaneousInterpreter'])
-    }
-  }
-
-
 
   console.log('Applying Audio Rules: Completed');
+
+  const hasSiRule = audioConfig.find(({ role }) => role == 'SimultaneousInterpreter');
+
+  if (!hasSiRule) {
+    console.log('No SI Rules Found')
+    return
+  }
 
   // Re-apply Interpreter Selections
   processParticipants({});
 
 }
 
-async function identifyAndApplyRule(input, output, localOutputs, roles = []) {
+function processAudioConnections(inputs, outputs, rules) {
+
+  const nonSiRules = rules.filter(({ role }) => role != 'SimultaneousInterpreter');
+  const siRules = rules.filter(({ role }) => role == 'SimultaneousInterpreter');
+
+  if (debug) console.log('siRules:', siRules)
+  if (debug) console.log('siRule has Language 2', siRules.some(({ output }) => output == 'Language 2'))
+
+  const rulesByRole = new Map(nonSiRules.map(rule => [rule.role, rule]));
+  const rulesByStreamId = new Map(siRules.map((rule, index) => [index + 1, rule]));
+  const mainInputIds = inputs.filter(({ Role }) => Role === 'Main').map(({ id }) => id);
+
+  // Create Change Arrays
+  const Update = []
+  const ConnectInput = [];
+  const UpdateInputGain = [];
+  const DisconnectInput = [];
+
+  // Approach:
+  // Loop throught outputs and inputs
+  // Connect AEC links if processing loudspaker output and input has AEC set to true
+  //
+  // SimultaneousInterpreter Roles: 
+  // 1. Lookup Rule by Stream Id
+  // 2. No Rule found but connected to output - disconnect input and return
+  // 3. Rule found but not for output group:
+  //   a. Loudspeaker Output Group and AEC Required - Ignore and return
+  //   b. Not connected to output - Ignore and return
+  //   c. Otherwise disconnect input from output
+  // 4. Get Mixer Gains
+  // 5. Update or Add Connection from SI Role input to output group
+  // 6. Update or Add Connection to Main Role inputs to output group
+  // 7. return
+  //
+  // Main and Presentation Roles: 
+  // 1. Identify conditions:
+  //   a: Is Output Group configure under any SI Rules
+  //.  b: Is there a connection gain for this input to the output group name
+  // 2. If InputGain exists, update or connect if required  and return
+  // 3. If not connections and no gain - Ignore and return
+  // 4. If on loadspeaker and require AEC - ignore and return as this was handled
+  // 5. If output has an SI Rule and Input Role is Main - Ignore and return
+  // 6. Delete all other remaining connections
+
+  // Loop though each output group
+  outputs.map(output => {
+
+    // Create map of each input connections id to Gain
+    const outputInputIds = new Map(output?.Input?.map(({ id, Gain }) => [id, Gain]));
+
+    // Note if Output Group is set as Loudspeaker
+    const loudspeaker = output?.Loudspeaker == 'On';
+
+    // Store OutputId for change arrays
+    const OutputId = output?.id;
 
 
-  const loudspeaker = localOutputs.find(({ Loudspeaker }) => Loudspeaker == 'On');
-  const loudspeakerId = loudspeaker?.id;
-  const loudspeakerName = loudspeaker?.Name;
-  const outputId = output.id;
-  const outputName = output.Name;
-  const associatedStreamId = getRuleStreamId(outputName);
-  const rules = getRules(outputName);
+    // Check if outputs group name is present in any rule
+    const anyRule = getRules(output.Name);
 
-  const inputRole = input.Role;
-  const inputStreamId = input?.StreamId;
-  const inputId = input.id;
-
-  console.debug('identifyAndApplyRule - input:', input, '- output:', output, '- roles:', roles, 'OutputName:', outputName, '- associatedStreamId:', associatedStreamId, '- rules:', rules);
+    // If output goup has a rule for an remote input role
+    // disable its AutoconnectRemote is present
+    if (anyRule && output.AutoconnectRemote == 'On') {
+      Update.push({ OutputId, AutoconnectRemote: 'Off' })
+    }
 
 
-  // If Output has a SI Config, this takes priority
-  if (associatedStreamId && roles.includes('SimultaneousInterpreter')) {
+    // Loop though each remote inputs
+    inputs.forEach(({ id: InputId, Role, StreamId }) => {
 
-    const siRule = audioConfig.filter(({ role }) => role == 'SimultaneousInterpreter');
-    const { mixerLevel, languageName, aec } = siRule?.[associatedStreamId - 1];
-    const gains = getDbGains(mixerLevel);
-    console.debug('SI Rule - outputName:', outputName, 'siRule', siRule, '- mixerLevel', mixerLevel, '- gains:', gains, '- inputRole:', inputRole)
+      const rule = rulesByRole.get(Role) ?? rulesByStreamId.get(parseInt(StreamId));
+      const siOutputGroup = siRules.some(rule => rule?.output == output?.Name);
 
-    if (inputRole == 'Main' || inputRole == 'Presentation') {
-      applyRule(localOutputs, `${inputRole}`, outputName, inputId, outputId, gains[1])
-    } else if (inputStreamId == associatedStreamId) {
-      applyRule(localOutputs, `${inputRole}.${associatedStreamId}.${languageName}`, outputName, inputId, outputId, gains[0])
-      if (aec) {
-        console.log('Linking AEC for:', loudspeakerName, languageName)
-        applyRule(localOutputs, `${inputRole}.AEC`, loudspeakerName, inputId, loudspeakerId, 0)
+      const requireAEC = rule?.aec ?? false;
+
+      if (debug) console.error('Role:', Role, '| OutputName:', output.Name, '| Rule:', rule, '| requireAEC:', requireAEC)
+
+      if (loudspeaker && requireAEC) {
+        if (outputInputIds.has(InputId) && outputInputIds.get(InputId) != 0) {
+          if (debug) console.warn('Updated AEC Gain - Role:', Role, 'InputId:', InputId, ' - OutputId:', OutputId, 'OutputName:', output.Name)
+          UpdateInputGain.push({ InputGain: 0, InputId, OutputId });
+        } else if (!outputInputIds.has(InputId)) {
+          if (debug) console.warn('Connecting AEC  - Role:', Role, 'InputId:', InputId, ' - OutputId:', OutputId, 'OutputName:', output.Name)
+          ConnectInput.push({ InputGain: 0, InputId, OutputId });
+        }
+      } else if (loudspeaker && !requireAEC) {
+        if (debug) console.warn('Disconnecting AEC  - Role:', Role, 'InputId:', InputId, ' - OutputId:', OutputId, 'OutputName:', output.Name)
+        DisconnectInput.push({ InputId, OutputId });
       }
-    }
-    return
-  }
 
-  if (roles.includes('SimultaneousInterpreter')) return
+      // Handle SI Roles separately
+      if (Role == 'SimultaneousInterpreter') {
+
+        if (debug) console.log('SimultaneousInterpreter StreamId:', StreamId, 'outputInputIds.has(InputId)', outputInputIds.has(InputId), '!rule', !rule)
+
+        // If there no rule for stream id but InputId is present - disconnection input
+        if (!rule && outputInputIds.has(InputId)) {
+          if (debug) console.warn('No Rule and has connection - Disconnecting streamId:', StreamId, 'InputId:', InputId, 'OutputId:', OutputId, 'OutputName:', output.Name)
+          DisconnectInput.push({ InputId, OutputId })
+          return
+        }
+
+        if (rule?.output != output.Name) {
+          if (loudspeaker && requireAEC) return
+          if (!outputInputIds.has(InputId)) return
+          if (debug) console.warn('Disconnecting streamId:', StreamId, 'InputId:', InputId, 'OutputId:', OutputId, 'OutputName:', output.Name)
+          DisconnectInput.push({ InputId, OutputId })
+          return
+        }
+
+        const [interpreter, floor] = getDbGains(rule?.mixerLevel);
+
+        if (outputInputIds.has(InputId)) {
+          if (debug) console.warn('Updating Gain streamId:', StreamId, 'InputId:', InputId, 'OutputId:', OutputId, 'OutputName:', output.Name)
+          UpdateInputGain.push({ InputGain: interpreter, InputId, OutputId });
+        } else {
+          if (debug) console.warn('Connecting Gain streamId:', StreamId, 'InputId:', InputId, 'OutputId:', OutputId, 'OutputName:', output.Name)
+          ConnectInput.push({ InputGain: interpreter, InputId, OutputId });
+        }
+
+        if (debug) console.log('Main Input Ids:', mainInputIds)
+
+        mainInputIds.forEach(InputId => {
+          if (outputInputIds.has(InputId)) {
+            if (debug) console.warn('Updating Gain InputName: Main | StreamId:', StreamId, '| InputId:', InputId, '| OutputId:', OutputId, '| OutputName:', output.Name)
+            UpdateInputGain.push({ InputGain: floor, InputId, OutputId });
+          } else {
+            if (debug) console.warn('Connecting Input InputName: Main | StreamId:', StreamId, '| InputId:', InputId, '| OutputId:', OutputId, '| OutputName:', output.Name)
+            ConnectInput.push({ InputGain: floor, InputId, OutputId });
+          }
+        })
+
+        return
+
+      }
+
+      // Handle Main and Presentation Roles
 
 
-  if (rules.length == 0 && outputId != loudspeakerId) {
-    applyRule(localOutputs, `${inputRole}`, outputName, inputId, outputId)
-    return
-  }
+      const ruleOutput = rule?.outputs?.find(({ name }) => name === output.Name);
+      const InputGain = ruleOutput?.gain;
 
-  console.debug('Rules -', outputName, rules)
-  const matchedRole = rules.find(({ role }) => role == inputRole);
-  console.debug('MatchedRole:', JSON.stringify(matchedRole))
-  if (matchedRole) {
-    const matchedRoleOption = matchedRole.outputs?.find(({ name }) => name == outputName);
-    console.debug('matchedRoleOption:', JSON.stringify(matchedRoleOption))
-    if (!matchedRoleOption) return
-    applyRule(localOutputs, `${inputRole}`, outputName, inputId, outputId, matchedRoleOption.gain)
-  }
+      if (debug) console.log('Remote Input - Role:', Role, 'InputId:', InputId, 'OutputName:', output.Name, 'OutputId:', OutputId, 'AEC:', requireAEC, 'Matched Rule:', rule, 'siOutputGroup:', siOutputGroup, 'ruleOutput:', ruleOutput, 'InputGain', InputGain)
 
-  const matchedRule = audioConfig.find(({ role }) => role == inputRole);
+      if (InputGain != undefined) {
+        if (outputInputIds.has(InputId)) {
+          if (outputInputIds.get(InputId) == InputGain) {
+            if (debug) console.warn('No Rule + Has Connection + RequireAEC + Gain 0 = No Action - InputId:', InputId, ' - OutputId:', OutputId);
+            return
+          }
+          if (debug) console.warn('No Rule + Has Connection + RequireAEC - Bad Gain = Updating Gain - InputId:', InputId, ' - OutputId:', OutputId);
+          UpdateInputGain.push({ InputGain: 0, InputId, OutputId });
+          return
+        } else {
+          if (debug) console.warn('Connecting Input - Role:', Role, 'InputId:', InputId, ' - OutputId:', OutputId, 'OutputName:', output.Name)
+          ConnectInput.push({ InputGain, InputId, OutputId });
+          return
+        }
+      }
 
-  if (matchedRule?.aec && outputId == loudspeakerId) {
-    applyRule(localOutputs, `${inputRole}`, outputName, inputId, outputId, 0)
-  }
+
+      if (!outputInputIds.has(InputId)) {
+        if (debug) console.warn('No Rule - No Inputs = No Action - InputId:', InputId, ' - OutputId:', OutputId)
+        return
+      }
+
+
+      if (loudspeaker && requireAEC) {
+        if (debug) console.warn('No Rule - Has Inputs = Requires AEC = No Action - InputId:', InputId, ' - OutputId:', OutputId)
+        return
+      }
+
+      // Remove connection if no role rule but connection is present
+      if (siOutputGroup && Role == 'Main') {
+        if (debug) console.warn('Disconnecting Input due to no rule rule and no SI Output A - InputId:', InputId, ' - OutputId:', OutputId);
+        return
+      }
+
+      if (debug) console.warn('Disconnecting Input due to no rule rule and no SI Output A - InputId:', InputId, ' - OutputId:', OutputId);
+      DisconnectInput.push({ InputId, OutputId })
+
+    });
+
+  });
+
+  return { Update, ConnectInput, UpdateInputGain, DisconnectInput }
 
 }
 
-
-function applyRule(localOutputs, inputName, outputName, InputId, OutputId, InputGain) {
-
-  if (!localOutputs) {
-    throw new Error('Unable to Apply Rule and localOutputs is undefined')
-  }
-
-  const loudspeakerId = localOutputs.find(({ Loudspeaker }) => Loudspeaker == 'On')?.id;
-  console.debug('Apply Rule - inputName:', inputName, '- outputName:', outputName, '- InputId:', InputId, '- OutputId:', OutputId, '- InputGain:', InputGain, '- LoudspeakerId:', loudspeakerId, '= -54?', InputGain == -54)
-  const output = localOutputs.find(({ id }) => id == OutputId);
-
-  if (!output) {
-    console.warn('Unable to find output for outputId:', OutputId);
-    return
-  }
-
-  const input = output?.Input?.find(({ id }) => id == InputId);
-
-  if (InputGain != undefined && InputGain != -54) {
-
-    if (input) {
-      if (parseInt(input?.Gain) == InputGain) return
-      console.log('Updating Input Gain - InputName:', inputName, 'InputId:', InputId, 'OutputName:', outputName, 'OutputId:', OutputId, 'InputGain:', InputGain);
-      xapi.Command.Audio.LocalOutput.UpdateInputGain({ InputGain, OutputId, InputId })
-        .catch(e => console.error('Error Updating Gain InputName:', inputName, 'InputId:', InputId, 'OutputName:', outputName, 'OutputId:', OutputId, 'InputGain:', InputGain, 'Error Message:', e.message))
-      return
-
-    } else {
-      console.log('Connecting Input - InputName:', inputName, 'InputId:', InputId, 'OutputName:', outputName, 'OutputId:', OutputId, 'InputGain:', InputGain)
-      xapi.Command.Audio.LocalOutput.ConnectInput({ InputGain, InputId, OutputId })
-        .catch(e => console.error('Error Connect Input - InputName:', inputName, 'InputId:', InputId, 'OutputName:', outputName, 'OutputId:', OutputId, 'InputGain:', InputGain, 'Error Message:', e.message))
-      return
-    }
-  } else if (input) {
-    console.log('Disconnecting InputName:', inputName, 'InputId:', InputId, 'From OutputName:', outputName, 'OutputId:', OutputId)
-    xapi.Command.Audio.LocalOutput.DisconnectInput({ InputId, OutputId })
-      .catch(e => console.error('Error Disconnecting - InputName:', inputName, 'InputId:', InputId, 'From OutputName:', outputName, 'OutputId:', OutputId, 'Error Message:', e.message))
-    return
-  }
-
-}
 
 async function disconnectStreams() {
   selectedLanguages = [];
@@ -563,12 +670,7 @@ async function disconnectStreams() {
   }))
 }
 
-// Returns the gain from matching role and output group name
-function getGainFromRule(roleName, outputName) {
-  const rule = audioConfig.find(({ role }) => role == roleName);
-  const gain = rule?.outputs?.find(output => output.name == outputName)?.gain;
-  return gain
-}
+
 
 // Returns all rules used by given output group name
 function getRules(outputName) {
@@ -579,14 +681,6 @@ function getRules(outputName) {
   })
 }
 
-
-function getRuleStreamId(outputName) {
-  const siRules = audioConfig.filter(({ role }) => role == 'SimultaneousInterpreter');
-  if (siRules.length == 0) return
-  const index = siRules.findIndex(rule => rule.output == outputName)
-  if (index == -1) return
-  return index + 1
-}
 
 
 function getUniqueLanguageCodes(languagePairs) {
