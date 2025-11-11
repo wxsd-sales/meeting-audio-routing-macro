@@ -132,19 +132,17 @@ For example, if you wanted the Far-End Presentation audio to play out a separate
     outputs: [{
       name: "Loudspeaker",
       gain: 0
-    }]
+    }],
+    aec: true
   },
   {
     role: "Presentation",
     outputs: [{
-      name: "Content Share",
+      name: "Front Speakers",
       gain: 0
-    },
-    {
-      name: "Loudspeaker",
-      gain: -30
-    }]
-  },
+    }],
+    aec: true
+  }
 ```
 
 ### Simultaneous Interpreter Language Audio Routing
@@ -152,29 +150,29 @@ For example, if you wanted the Far-End Presentation audio to play out a separate
 If you wanted to route specific Simultaneous Interpreter languages out specific output groups ( group names: "Language 1" - "Language 4") you can configure this with the following configuration:
 
 ```javascript
-{
+  {
     role: "SimultaneousInterpreter",
-    languageName: 'es',
-    mixerLevel: 50,
-    output: "Language 1"
-
+    languageName: 'no',
+    mixerLevel: 100,
+    output: "Language 1",
+    aec: true
   },
   {
     role: "SimultaneousInterpreter",
-    languageName: 'de',
+    languageName: 'auto',
     mixerLevel: 100,
     output: "Language 2"
   },
   {
     role: "SimultaneousInterpreter",
-    languageName: 'fr',
-    mixerLevel: 50,
+    languageName: 'auto',
+    mixerLevel: 100,
     output: "Language 3"
   },
   {
     role: "SimultaneousInterpreter",
-    languageName: 'en',
-    mixerLevel: 50,
+    languageName: 'auto',
+    mixerLevel: 100,
     output: "Language 4"
   }
 ```
@@ -204,21 +202,45 @@ If you wanted to route specific Simultaneous Interpreter languages out specific 
       ```javascript
       const audioConfig = [
         {
-          role: "Main" | "Presentation",
+          role: "Main",
           outputs: [{
-            name: "Content Share",
-            gain: 0
-          },
-          {
             name: "Loudspeaker",
-            gain: -30
-          }]
+            gain: 0
+          }],
+          aec: true
+        },
+        {
+          role: "Presentation",
+          outputs: [{
+            name: "Front Speakers",
+            gain: 0
+          }],
+          aec: true
         },
         {
           role: "SimultaneousInterpreter",
-          languageName: 'es',
-          mixerLevel: 50,
-          output: "Language 1"
+          languageName: 'no',
+          mixerLevel: 100,
+          output: "Language 1",
+          aec: true
+        },
+        {
+          role: "SimultaneousInterpreter",
+          languageName: 'auto',
+          mixerLevel: 100,
+          output: "Language 2"
+        },
+        {
+          role: "SimultaneousInterpreter",
+          languageName: 'auto',
+          mixerLevel: 100,
+          output: "Language 3"
+        },
+        {
+          role: "SimultaneousInterpreter",
+          languageName: 'auto',
+          mixerLevel: 100,
+          output: "Language 4"
         }
       ]
       ```
